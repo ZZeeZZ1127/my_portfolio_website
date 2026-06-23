@@ -53,7 +53,7 @@ export default function MobileNav({ links }: { links: LinkItem[] }) {
 
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-[55] bg-black/50 backdrop-blur-sm"
           onClick={close}
           aria-hidden="true"
         />
@@ -61,7 +61,7 @@ export default function MobileNav({ links }: { links: LinkItem[] }) {
 
       <div
         id="mobile-menu"
-        className={`fixed top-0 right-0 z-50 h-full w-64 bg-[var(--color-surface)] border-l border-[var(--color-border)] transform transition-transform duration-300 ${
+        className={`fixed top-0 right-0 z-[60] h-dvh w-64 max-w-[80vw] bg-[var(--color-surface)] border-l border-[var(--color-border)] transform transition-transform duration-300 ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
