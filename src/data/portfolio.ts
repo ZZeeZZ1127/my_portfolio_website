@@ -50,18 +50,6 @@ export const portfolioData: PortfolioData = {
       ],
     },
     {
-      id: "mit-bwsi",
-      role: "SGAI Member, Beaver Works Summer Institute",
-      company: "Massachusetts Institute of Technology",
-      location: "Cambridge, MA",
-      startDate: "Jul 2024",
-      endDate: "Aug 2024",
-      highlights: [
-        "Collaborated in an Agile team of five to implement game components using Python, Unity, and Git during an intensive 8-week program on systems modeling and AI ethics",
-        "Achieved a 92% classification accuracy across 5 CNN models by generating a custom dataset of 2,000+ synthetic images in Unity to train neural networks",
-      ],
-    },
-    {
       id: "think-academy",
       role: "Academic Operations Assistant",
       company: "Think Academy International Education Inc.",
@@ -73,6 +61,18 @@ export const portfolioData: PortfolioData = {
         "Improved AIME qualification rates for 150+ students by 25% through the implementation of personalized one-on-one guidance and curriculum reinforcement",
         "Evaluated student progress and provided one-on-one guidance to reinforce key academic concepts for varying skill levels",
         "Coordinated educational events including mock exams and open houses to enhance student engagement",
+      ],
+    },
+    {
+      id: "mit-bwsi",
+      role: "SGAI Member, Beaver Works Summer Institute",
+      company: "Massachusetts Institute of Technology",
+      location: "Cambridge, MA",
+      startDate: "Jul 2024",
+      endDate: "Aug 2024",
+      highlights: [
+        "Collaborated in an Agile team of five to implement game components using Python, Unity, and Git during an intensive 8-week program on systems modeling and AI ethics",
+        "Achieved a 92% classification accuracy across 5 CNN models by generating a custom dataset of 2,000+ synthetic images in Unity to train neural networks",
       ],
     },
   ],
