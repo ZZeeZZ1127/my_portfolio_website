@@ -17,9 +17,16 @@ export default function ExperienceTimeline() {
               [{exp.startDate}] — [{exp.endDate}]
             </div>
 
-            <h3 className="text-lg font-semibold text-[var(--color-accent)]">
-              {exp.role}
-            </h3>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-lg font-semibold text-[var(--color-accent)]">
+                {exp.role}
+              </h3>
+              {exp.category === "non-technical" && (
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-text-muted)]">
+                  ops
+                </span>
+              )}
+            </div>
 
             <p className="text-sm text-[var(--color-text-secondary)] mb-3">
               {exp.company} &middot; {exp.location}

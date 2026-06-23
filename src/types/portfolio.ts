@@ -6,6 +6,7 @@ export interface Experience {
   startDate: string;
   endDate: string;
   highlights: string[];
+  category?: "technical" | "non-technical";
 }
 
 export interface Project {

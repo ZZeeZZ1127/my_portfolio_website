@@ -61,6 +61,20 @@ export const portfolioData: PortfolioData = {
         "Achieved a 92% classification accuracy across 5 CNN models by generating a custom dataset of 2,000+ synthetic images in Unity to train neural networks",
       ],
     },
+    {
+      id: "think-academy",
+      role: "Academic Operations Assistant",
+      company: "Think Academy International Education Inc.",
+      location: "Bellevue, WA",
+      startDate: "Dec 2024",
+      endDate: "Aug 2025",
+      category: "non-technical",
+      highlights: [
+        "Improved AIME qualification rates for 150+ students by 25% through the implementation of personalized one-on-one guidance and curriculum reinforcement",
+        "Evaluated student progress and provided one-on-one guidance to reinforce key academic concepts for varying skill levels",
+        "Coordinated educational events including mock exams and open houses to enhance student engagement",
+      ],
+    },
   ],
   projects: [
     {
