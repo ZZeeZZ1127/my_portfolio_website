@@ -22,7 +22,7 @@ export const portfolioData: PortfolioData = {
       startDate: "Jun 2026",
       endDate: "Aug 2026",
       highlights: [
-        "Selected for a competitive, NSF-sponsored Research Experience for Undergraduates (REU) program focused on advanced algorithms and data science applications",
+        "Selected for a competitive, NSF-sponsored Research Experience for Undergraduates (REU) program focused on the applications of Graphic Neural Networks (GNNs) in software vulnerability detection",
       ],
     },
     {
