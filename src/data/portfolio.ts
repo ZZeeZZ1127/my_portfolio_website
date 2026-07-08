@@ -6,7 +6,7 @@ export const portfolioData: PortfolioData = {
   title: "Computer Science Student & Developer",
   tagline: "Building at the intersection of AI, systems, and full-stack engineering.",
   bio: [
-    "I'm a Computer Science student at the University of Washington, passionate about AI/ML, full-stack development, and robotics. I enjoy building scalable systems, working with LLMs and vision models, and shipping real products that solve real problems.",
+    "I'm a Computer Science student at the University of Washington, passionate about AI/ML, systems, and full-stack development. I enjoy building scalable systems, working with LLMs and vision models, and shipping real products that solve real problems.",
   ],
   aboutParagraphs: [
     "I'm a Computer Science student at the University of Washington, expected to graduate in June 2028. My passion lies in building innovative software solutions across the stack — from LLM-powered applications and computer vision pipelines to distributed data systems.",
@@ -16,13 +16,18 @@ export const portfolioData: PortfolioData = {
   experience: [
     {
       id: "montana-state-reu",
-      role: "Undergraduate Research Fellow",
+      role: "Undergraduate Research Fellow -- HACR Lab",
       company: "Montana State University",
       location: "Bozeman, MT",
       startDate: "Jun 2026",
-      endDate: "Aug 2026",
+      endDate: "Present",
       highlights: [
         "Selected for a competitive, NSF-sponsored Research Experience for Undergraduates (REU) program focused on the applications of Graph Neural Networks (GNNs) in software vulnerability detection",
+        "Built a binary function inlining detection pipeline using Ghidra to disassemble O3-compiled binaries and extract instruction-level control flow and data dependency graphs",
+        "Implemented dominator-based Single-Entry Single-Exit (SESE) region decomposition in Python to segment binary structures for fine-grained functional analysis",
+        "Deployed pre-trained Siamese Relational Graph Attention Networks (RGATs) to generate high-dimensional embeddings of SESE regions, detecting function inlining through cosine similarity against O0 reference set",
+        "Validated detection accuracy using DWARF debug metadata as ground truth, cross-referencing compiler-emitted records against pipeline detection to measure precision, recall, and determine cosine similarity thresholds",
+
       ],
     },
     {
