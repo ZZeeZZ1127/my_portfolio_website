@@ -157,3 +157,46 @@
     rgba(0, 0, 0, 0.015) 4px
   );
 }
+
+/* ── Blog MDX content typography ── */
+.prose-custom {
+  color: var(--color-text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.prose-custom strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.prose-custom em {
+  color: var(--color-text-secondary);
+}
+
+.prose-custom img {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  margin: 1.5rem 0;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Code blocks rendered by rehype-pretty-code */
+.prose-custom pre {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  background-color: var(--color-surface) !important;
+  margin: 1.5rem 0;
+}
+
+.prose-custom pre code {
+  font-family: var(--font-jetbrains-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  background: none !important;
+  border: none;
+  padding: 0;
+}

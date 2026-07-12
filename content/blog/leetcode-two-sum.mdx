@@ -1,0 +1,60 @@
+---
+title: "LeetCode 1: Two Sum"
+date: "2026-07-10"
+tags: ["leetcode", "algorithms"]
+excerpt: "Multiple approaches to the classic Two Sum problem — from brute force to the optimal hash map solution."
+---
+
+## Problem Statement
+
+Given an array of integers `nums` and an integer `target`, return the indices of the two numbers that add up to `target`.
+
+You may assume that each input has **exactly one solution**, and you may not use the same element twice.
+
+## Approach 1: Brute Force
+
+The simplest approach: check every pair of numbers.
+
+```python
+def two_sum(nums: list[int], target: int) -> list[int]:
+    n = len(nums)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if nums[i] + nums[j] == target:
+                return [i, j]
+    return []
+```
+
+- **Time complexity**: O(n²) — nested loops over n elements
+- **Space complexity**: O(1) — no extra data structures
+
+This works but doesn't scale well for large inputs.
+
+## Approach 2: Hash Map (Optimal)
+
+We can trade space for time. As we iterate, store each number's index in a hash map. For each new number, check if its complement (`target - num`) is already in the map.
+
+```python
+def two_sum(nums: list[int], target: int) -> list[int]:
+    seen: dict[int, int] = {}
+    for i, num in enumerate(nums):
+        complement = target - num
+        if complement in seen:
+            return [seen[complement], i]
+        seen[num] = i
+    return []
+```
+
+- **Time complexity**: O(n) — single pass through the array
+- **Space complexity**: O(n) — hash map stores up to n entries
+
+## Key Takeaways
+
+1. Hash maps turn O(n²) pair-searching into O(n) lookups
+2. The complement trick (`target - num`) is a common pattern for sum problems
+3. Always consider the **space-time trade-off** — here, the extra O(n) memory is well worth the O(n) speedup
+
+## Related Problems
+
+- LeetCode 167: Two Sum II (sorted input — use two pointers)
+- LeetCode 15: 3Sum (extend the hash map approach to three elements)

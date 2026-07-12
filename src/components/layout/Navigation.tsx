@@ -8,6 +8,7 @@ import MobileNav from "./MobileNav";
 const links = [
   { href: "/", label: "~/" },
   { href: "/about", label: "~/about" },
+  { href: "/blog", label: "~/blog" },
   { href: "/experience", label: "~/experience" },
   { href: "/projects", label: "~/projects" },
   { href: "/certifications", label: "~/certifications" },
