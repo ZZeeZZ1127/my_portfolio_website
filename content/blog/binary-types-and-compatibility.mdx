@@ -1,0 +1,16 @@
+---
+title: "Binary Types and Ghidra Compatibility"
+date: "2026-07-12"
+tags: ["reu", "research"]
+excerpt: Compatibility issues between binaries and ghidra that I encountered while building the entire pipeline"
+---
+
+## The two binary formats
+
+All compiled C code in this research project produces one of two binary formats, depending on which compiler was used:
+
+| Compiler | Command | Output format | Architecture |
+| :---     | :---:   |  :---:        | ---:         |
+| Apple Clang (system `gcc`) | `gcc -c file.c -o file.o` | Mach-O | ARM64 (aarch64) |
+| Cross-compiler | `x86_64-elf-gcc -c file.c -o file.o` | ELF | x86-64 |
+
