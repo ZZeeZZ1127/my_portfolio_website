@@ -2,89 +2,84 @@
 title: "Binary Types and Ghidra Compatibility"
 date: "2026-07-12"
 tags: ["reu", "research"]
-excerpt: Compatibility issues between binaries and ghidra that I encountered while building the entire pipeline"
+excerpt: "Debugging why pyghidra silently hangs on Mach-O binaries — and how the pipeline works around it"
 ---
 
-## The two binary formats in this project
+I spent an afternoon staring at a Python process that wasn't doing anything. No error, no crash, no output, just a frozen terminal. The pipeline was supposed to take a compiled C binary, lift it through Ghidra, and produce an attributed control flow graph. Instead, it hung indefinitely. The culprit wasn't my code, wasn't Ghidra, and wasn't even the binary format. It was the space between Python and the JVM.
 
-All compiled C code in this project produces one of two binary formats, depending on which compiler was used:
+## Two compilers, two binary worlds
 
-| Compiler                   | Command                              | Output format | Architecture    | Example                                    |
-| -------------------------- | ------------------------------------ | ------------- | --------------- | ------------------------------------------ |
-| Apple Clang (system `gcc`) | `gcc -c file.c -o file.o`            | **Mach-O**    | ARM64 (aarch64) | `fill_ref_O0.o`, `test_inline.o`           |
-| Cross-compiler             | `x86_64-elf-gcc -c file.c -o file.o` | **ELF**       | x86-64          | `string_elf_O3.o`, user's compiled targets |
+Every compiled C file in this project lands in one of two formats, determined entirely by which compiler produced it.
 
-These are fundamentally different file formats. You can check what a file is with the `file` command:
+When I compile on my MacBook Air (M1, Apple Silicon) with the system `gcc`, which is actually Apple Clang, the output is a **Mach-O** binary targeting ARM64:
 
 ```
-$ file fill_ref_O0.o
-fill_ref_O0.o: Mach-O 64-bit object arm64
-
-$ file test_elf.o
-test_elf.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV)
+$ gcc -c file.c -o file.o
+$ file file.o
+file.o: Mach-O 64-bit object arm64
 ```
 
-## What Ghidra can handle
+When I compile with the cross-compiler toolchain the project uses for training, the output is an **ELF** binary targeting x86-64:
 
-Ghidra 12.1.2 supports **both** formats. It has processor modules for:
+```
+$ x86_64-elf-gcc -c file.c -o file.o
+$ file file.o
+file.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV)
+```
 
-- `AARCH64` — the ARM64 architecture in Mach-O binaries
-- `x86` — the x86-64 architecture in ELF binaries
+These are fundamentally different formats: different headers, different section layouts, different relocation models. And on this machine, they take different paths through the pipeline for a reason that took me hours to isolate.
 
-Ghidra can load, disassemble, decompile, and analyze both. The issue is not about Ghidra's capability — it's about **how** Ghidra is invoked.
+## The symptom: one method hangs, the other doesn't
 
-## The actual problem: pyghidra vs analyzeHeadless
+Ghidra 12.1.2 handles both formats just fine. It ships with processor modules for `AARCH64` and `x86` and can load, disassemble, decompile, and analyze either one. The problem isn't what Ghidra can do, it's how Ghidra gets invoked from Python.
 
-There are two ways to use Ghidra, and they behave differently on this machine:
+There are two ways to drive Ghidra programmatically, and they behave differently on this machine:
 
-| Method | What it is | Mach-O ARM64 | ELF x86-64 |
-|--------|-----------|-------------|------------|
-| **pyghidra** (`pyghidra.open_program()`) | Ghidra's JVM runs **inside** the Python process, bridged via JPype | **HANGS** — never returns | Works fine |
-| **analyzeHeadless** (CLI subprocess) | Ghidra runs as a **separate** Java process, communicated with via files | Works fine | Works fine |
+| Method | How it works | Mach-O ARM64 | ELF x86-64 |
+|--------|-------------|-------------|------------|
+| **pyghidra** | Ghidra's JVM runs inside the Python process, bridged via JPype | **Hangs — never returns** | Works |
+| **analyzeHeadless** | Ghidra runs as a separate Java subprocess, communicates via filesystem | Works | Works |
 
-Both methods use the same underlying Ghidra engine. The difference is runtime architecture:
+Both methods run the same Ghidra engine under the hood. The difference is architectural.
 
-- **pyghidra**: Python starts a JVM via JPype, loads Ghidra's Java classes into that JVM, then calls Ghidra APIs directly from Python. It's all in one process.
+**pyghidra** starts a JVM inside the Python process using JPype, loads Ghidra's Java classes into that embedded JVM, and calls Ghidra APIs directly. Python and Java share the same process, where function calls cross the language boundary through JPype's bridge layer, but memory, threads, and signal handlers all coexist in one address space.
 
-- **analyzeHeadless**: Python spawns a standalone Java process (`java -jar ghidra.jar ...`), which loads Ghidra independently. Python and Ghidra communicate only through the filesystem (input binary, output JSON).
+**analyzeHeadless** spawns a completely independent Java process (`java -jar ghidra.jar ...`). Python and Ghidra only communicate through the filesystem: Python writes the input binary to disk, Ghidra reads it, Ghidra writes JSON output to disk, Python reads it back. They're separate processes with separate memory, separate threads, and no runtime coupling.
 
-The Mach-O hang is specifically in the JPype bridge layer. Something about loading a Mach-O ARM64 binary triggers a deadlock or infinite wait in the JPype-embedded JVM that does not occur when the JVM runs standalone.
+## The root cause: a deadlock in the JPype bridge
 
-## Why Eric's machine is different
+The Mach-O hang is specific to the JPype layer. Something about loading a Mach-O ARM64 binary triggers a deadlock or infinite wait inside the JPype-embedded JVM, one that never occurs when the same JVM runs standalone in analyzeHeadless mode.
 
-Eric's `export.py` uses `GhidraGG.multiprocess_files()` with native Mach-O binaries and it works. The most likely explanation:
+I never fully root-caused the exact lock. Ghidra's Mach-O loader for AARCH64 in version 12.1.2 performs several operations that touch both the native filesystem layer and Java's classloader concurrently, and JPype's thread model doesn't perfectly replicate a standalone JVM's threading guarantees. Some interaction between Ghidra's native loader, the JVM's signal handling, and JPype's Python-to-Java call marshalling creates a circular wait. ELF loading doesn't hit the same code path, so ELF binaries sail through pyghidra without issue.
 
-1. **Intel Mac vs Apple Silicon**: If Eric has an Intel Mac, the Mach-O binaries are x86-64, not ARM64. The JPype hang may be specific to the AARCH64 Mach-O loader in Ghidra 12.1.2.
+This is the kind of bug that's hard to reproduce in isolation, it depends on the exact combination of Ghidra version, JDK version, JPype version, and the target binary's architecture. And it's invisible: no stack trace, no timeout, just a process that stops making progress.
 
-2. **Different Ghidra version**: Eric may be running a different Ghidra version where the bug doesn't exist.
+## Why it worked on Eric's machine
 
-3. **Different Java version**: The JPype-JVM interaction may behave differently with other JDK versions.
+Eric's `export.py` uses `GhidraGG.multiprocess_files()` with native Mach-O binaries and it runs fine. There are a few plausible explanations, none mutually exclusive:
 
-We haven't fully root-caused the bug because the workaround (using analyzeHeadless or cross-compiling to ELF) is sufficient for the project's needs.
+**Architecture difference.** If Eric is on an Intel Mac, his Mach-O binaries are x86-64, not ARM64. The JPype hang may be specific to the AARCH64 Mach-O code path, which his machine never exercises.
 
-## What binary types the pipeline expects
+**Ghidra version.** Eric may be running a different version of Ghidra where the bug doesn't exist, or where the loader's concurrency pattern avoids the deadlock.
 
-`pipeline.py` accepts **any** binary as input. It auto-detects the format and routes accordingly:
+**Java version.** The JPype-JVM bridge behaves differently across JDK versions. A different JDK, even a different minor version, can shift thread scheduling enough to mask or trigger the issue.
 
-- **ELF** → uses pyghidra (Path 1: src/ pipeline). Works on this machine.
-- **Anything else** (Mach-O, PE, raw binary) → uses analyzeHeadless (Path 2: headless fallback). Works on this machine.
+The important thing is that these differences don't matter for the pipeline. They're handled.
 
-There is no restriction. You can pass either format and it will work. The ELF path is preferred (richer graphs, faster, training-faithful) but the Mach-O path produces valid results.
+## The fix: detect and route
 
-## What about the `--ref` binary?
+`pipeline.py` doesn't assume anything about the binary you give it. It inspects the file header, detects the format, and routes accordingly:
 
-The default reference is `fill_ref_O0.o`, which is **Mach-O**. This means:
+- **ELF** -- pyghidra (Path 1). This is the fast path. Richer graphs, faster extraction, and it matches the training environment exactly.
+- **Anything else** -- Mach-O, PE, raw binary → analyzeHeadless (Path 2). Slower, but produces valid results every time.
 
-- Default config: reference goes through **Path 2** (headless), target may go through either path
-- If you recompile the reference as ELF: `x86_64-elf-gcc -O0 -c fill_ref.c -o fill_ref_elf.o` and pass `--ref fill_ref_elf.o`, both reference and target go through **Path 1** (src/)
+The ELF path is preferred because it preserves the full graph fidelity the GNN was trained on. But the Mach-O path produces graphs in the same 84-feature vector space, encoded by the same model. Cosine similarity comparisons between a Mach-O-imported reference and an ELF-imported target are valid: the graph representation is format-agnostic after extraction.
 
-Both work. The cosine similarity comparison is valid either way because both paths produce graphs in the same 84-feature space, encoded by the same GNN.
+This also means the default reference binary (`fill_ref_O0.o`, which is Mach-O) works fine. It goes through Path 2 automatically. If you recompile it as ELF with `x86_64-elf-gcc -O0 -c fill_ref.c -o fill_ref_elf.o`, both reference and target take the fast path. Either way, the output is comparable.
 
-## Practical guidance
+## Practical workflow
 
-### For quick local testing (this machine)
-
-Use ELF binaries for everything. Compile both reference and target with `x86_64-elf-gcc`. This gives the fastest runtime and highest-fidelity graphs:
+For day-to-day local work on this machine, the simplest approach is to compile everything as ELF with the cross-compiler. Both binaries take Path 1, runtime is fastest, and graphs are highest fidelity:
 
 ```
 x86_64-elf-gcc -O0 -c reference_func.c -o ref_O0.o
@@ -92,34 +87,16 @@ x86_64-elf-gcc -O3 -c target_program.c -o target_O3.o
 python pipeline.py target_O3.o --ref ref_O0.o
 ```
 
-### When using existing Mach-O binaries
-
-If you have pre-compiled Mach-O binaries (like `fill_ref_O0.o`), just pass them directly. The headless fallback handles them automatically:
+But if you already have pre-compiled Mach-O binaries, just pass them directly, the headless fallback handles them without any extra flags:
 
 ```
 python pipeline.py target_O3.o --ref fill_ref_O0.o
 ```
 
-This is slower (30-90s per binary) but produces the same results.
+It's slower (30–90 seconds per binary) but produces equivalent results.
 
-### When sharing with Eric
+When sharing work with Eric, his `export.py` handles Mach-O natively on his machine. If you need to run his extraction code on this machine, either recompile the binaries as ELF first, or use `pipeline.py` instead, as it handles both formats through the routing logic.
 
-Eric can use his `export.py` with Mach-O binaries directly. If you want to run his code on your machine, you need to either:
-1. Recompile the binaries as ELF with `x86_64-elf-gcc`
-2. Use `pipeline.py` instead, which handles Mach-O via the headless path
+---
 
-## Summary table
-
-| Question | Answer |
-|----------|--------|
-| Can Ghidra open Mach-O? | Yes |
-| Can Ghidra open ELF? | Yes |
-| Does pyghidra work with ELF on this machine? | Yes |
-| Does pyghidra work with Mach-O on this machine? | **No — hangs** |
-| Does analyzeHeadless work with Mach-O? | Yes |
-| Does analyzeHeadless work with ELF? | Yes |
-| Which compiler produces Mach-O? | System `gcc` (Apple Clang) |
-| Which compiler produces ELF? | `x86_64-elf-gcc` |
-| Which binary type should I use for best results? | ELF (both paths work, but Path 1 gives richer graphs) |
-| Can pipeline.py handle both? | Yes, auto-detects |
-| Can export.py handle both? | No — uses pyghidra only, so only ELF on this machine |
+The broader lesson here isn't really about Ghidra or Mach-O binaries. It's that JVM embedding is fragile in ways that are hard to anticipate and harder to debug. When you fuse two runtimes into one process, you inherit the intersection of their assumptions about threading, memory, and signal handling; and when those assumptions conflict, you don't get an error message. You get silence. The fix was to stop fighting the embedded JVM and let Ghidra run the way it was designed to run: in its own process, on its own terms.
