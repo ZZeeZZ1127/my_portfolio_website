@@ -1,0 +1,158 @@
+---
+title: "Finding SESE Regions: Dominators vs. the Program Structure Tree"
+date: "2026-07-13"
+tags: ["reu", "research", "compilers", "program-analysis"]
+excerpt: "A deep dive into two algorithms for decomposing control flow graphs into single-entry-single-exit regions — and why simpler won."
+---
+
+Decomposing a control flow graph into meaningful chunks is one of those problems that sounds straightforward until you try it. Given a CFG — basic blocks as nodes, control transfers as directed edges — how do you find the subgraphs that represent coherent units of execution? A loop body, an if-else branch, a function inlined into its caller. Each of these is a **SESE region**: a set of basic blocks with a single entry edge from outside the region and a single exit edge back out. SESE regions are the building blocks of structural analysis, and in this project they're the key to detecting inlined functions: an inlined function body, dropped into a caller at O3, naturally forms a multi-block SESE region that can be extracted, embedded, and compared against known function embeddings.
+
+This post walks through what SESE regions are, two algorithms for finding them, and why we ended up replacing one with the other.
+
+## What is a SESE region?
+
+Formally, a SESE (Single-Entry-Single-Exit) region is a set of nodes _R_ in a directed graph such that:
+
+1. **Single entry**: exactly one edge enters _R_ from outside _R_. That is, there is a distinct entry node (or entry edge) through which all paths into the region must pass.
+2. **Single exit**: exactly one edge leaves _R_ to outside _R_. All paths that leave the region must pass through this exit.
+
+In a CFG, the nodes are basic blocks and the edges are control transfers (conditional branches, unconditional jumps, fall-through). A SESE region captures a subgraph that, from the outside, behaves like a single node: you enter in one place, you leave in one place. Everything inside is an implementation detail.
+
+SESE regions nest naturally. A loop body is a SESE region. Inside that loop body, an if-else is another SESE region nested within the first. This nesting forms a tree — the **Program Structure Tree** — where each node is a region and children are regions fully contained within their parent.
+
+## Why SESE regions matter for this project
+
+The CodeDistill pipeline extracts graph representations from compiled C binaries, encodes them through a pre-trained GNN, and uses cosine similarity between embeddings to detect relationships between functions. The key insight for inlining detection is this: when a compiler inlines a function at O3, the inlined body doesn't disappear. It persists as a structurally distinct subgraph inside the caller — a group of basic blocks with one entry from the caller's control flow and one exit back to it. That's a SESE region.
+
+If we can reliably find those regions, we can encode each one and compare it against a library of known function embeddings. High cosine similarity means the region likely corresponds to that function, which means the function was inlined. The quality of the inlining detection depends directly on the quality of the SESE region decomposition.
+
+## Approach 1: The Program Structure Tree (JPP algorithm)
+
+The PST approach, based on the Johnson-Pearson-Pingali algorithm, was the original method used in CodeDistill. It's a linear-time algorithm that computes SESE regions by partitioning the edges of a CFG into **cycle-equivalence classes**.
+
+### The core idea: cycle-equivalence
+
+Two edges belong to the same cycle-equivalence class if they participate in the same set of cycles. Imagine a simple if-else diamond: the edge entering the branch and the edge leaving the merge point both belong to every cycle that goes through that if-else structure. They're in the same class. The edge taking the true branch and the edge taking the false branch each belong to different cycles — they're in different classes.
+
+When the algorithm finds two edges of the same class, where one edge enters a region and the other leaves it, that pair of edges defines a SESE region. The entry edge brings control into the region; the exit edge carries control out. Every node reachable from the entry edge's destination up to (but not including) the exit edge's source is inside the region.
+
+### Making the graph strongly connected
+
+The JPP algorithm requires a strongly connected graph — every node must be reachable from every other node. Real CFGs don't satisfy this (control flows from entry to exit, never backward at the top level), so the algorithm adds two synthetic nodes: a **super-entry** connected to all nodes with in-degree zero, and a **super-exit** connected from all nodes with out-degree zero. Then it adds a single **back edge** from super-exit to super-entry. This makes the graph strongly connected without changing any real control flow paths.
+
+### The algorithm in detail
+
+The algorithm operates in several phases:
+
+**Phase 1: DFS and back-edge classification.** A depth-first search from the super-entry assigns DFS numbers (discovery times) to every node. When the DFS encounters an edge leading to an already-visited node — a back edge — it records the edge and identifies the ancestor node it points to. This ancestor is the back edge's **upper** endpoint. The DFS also builds the spanning tree (parent-child relationships) and collects back edges per node — both those originating from a node (backedges_from) and those pointing to a node (backedges_to).
+
+**Phase 2: Post-order processing with hi values.** The core of the algorithm processes nodes in post-order (children before parents). For each node _n_, it computes three values:
+
+- **hi0**: the smallest DFS number reachable via a back edge from within _n_'s subtree. This is the highest ancestor that any back edge from this subtree can reach.
+- **hi1**: the smallest hi value among _n_'s immediate children.
+- **hi2**: the second-smallest hi value among _n_'s children.
+
+The final `hi[n]` is `min(hi0, hi1)`. This tells us, for each node, the highest ancestor reconnected to via back edges from within its subtree.
+
+**Phase 3: Bracket list maintenance.** Each node maintains a **bracket list** — an ordered list of "open" back edges that have been seen from within the subtree but haven't yet been closed (matched with their ancestor). When processing node _n_:
+
+1. The node inherits and concatenates the bracket lists from its children.
+2. Any capping edges targeting _n_ from below are deleted (closed).
+3. Back edges _to_ _n_ (this node is the ancestor) are deleted (closed). If a closed back edge doesn't have a class yet, it gets a new class.
+4. Back edges _from_ _n_ are pushed onto the bracket list (opened).
+
+**Phase 4: Capping edges for irreducible regions.** If `hi2 < hi0`, the node needs a **capping edge**. This happens when a grandchild's subtree can reach an ancestor above the highest ancestor reachable from the current node's own backedges (hi0), and a second child's subtree can also reach above that point. The capping edge — from _n_ to the node at DFS number `hi2` — "caps" the bracket at the second-highest reachable ancestor, splitting the cycle-equivalence class.
+
+**Phase 5: Edge classification via the bracket top.** After processing children and capping, the algorithm looks at the top of the bracket list. If the top edge's `recent_size` differs from the current bracket list size, the top gets a new class. The tree edge from _n_'s parent to _n_ inherits the class of the bracket top. If the top is a "singleton" (recent_size = 1 and not a capping edge), it also gets this class — a region formed by a single edge pair.
+
+**Phase 6: Region formation.** The algorithm orders edges by a second DFS traversal (this time following the original CFG edge order). For each class, the first occurrence is the entry edge and the second is the exit edge. A region is created with this pair, and the edge-split dominator/post-dominator data is used to determine the nesting hierarchy: region A contains region B if A's entry dominates B's entry and A's exit post-dominates B's exit.
+
+### What PST does well
+
+When it works, the PST is elegant. It partitions edges exactly by their cycle relationships, finding regions that correspond precisely to the nested control structures in the original C code. For a function with complex nesting — loops containing if-else chains containing inner loops — the PST produces a clean hierarchy of regions.
+
+### What PST does poorly
+
+The algorithm has real drawbacks in practice:
+
+**Fragility.** The implementation is ~500 lines of dense graph theory code, and it's brittle. If the graph isn't properly connected, or if the cycle-equivalence computation encounters an unexpected structure, it throws. In the `sese_explore.py` diagnostic tool, the PST path has an explicit fallback to dominator-based detection because PST failures are common enough to plan for.
+
+**Over-fragmentation on clean functions.** A standalone function with no inlining — just loops and branches — gets decomposed by the PST into many single-edge or single-node regions. These are useless for inlining detection. You need multi-block regions that could plausibly be a function body. The PST finds technically correct regions, but most of them are too small to be meaningful.
+
+**Requires strongly connected graphs.** The back-edge trick from super-exit to super-entry is a mathematical device that works, but it introduces a synthetic cycle that the algorithm has to work around. Regions that touch the super-entry or super-exit must be filtered out, and the hierarchy around those edges can be distorted.
+
+**Hard to debug.** When the PST produces an unexpected set of regions, tracing the cause through the post-order bracket list manipulation is non-trivial. The algorithm interleaves several kinds of state (DFS numbers, bracket lists, class assignments, capping edges) and a mistake anywhere propagates silently.
+
+## Approach 2: Dominator-based detection
+
+The dominator-based approach is the replacement. It's tied to a simpler, more direct question: **given a branch point, where do its paths reconverge?** And conversely, **given a merge point, where did its paths diverge?**
+
+### Background: dominators and post-dominators
+
+In a directed graph with a designated entry node, node _A_ **dominates** node _B_ if every path from the entry to _B_ must pass through _A_. The **immediate dominator** of _B_ (written `idom[B]`) is the unique node that dominates _B_ and is dominated by every other dominator of _B_ — the "closest" dominator.
+
+**Post-dominators** are the reverse: in a graph with a designated exit node, node _A_ post-dominates node _B_ if every path from _B_ to the exit must pass through _A_. The **immediate post-dominator** of _B_ (`ipdom[B]`) is the closest post-dominator.
+
+Both can be computed in near-linear time. NetworkX provides `immediate_dominators()` for both.
+
+### The branch rule
+
+A branch node has out-degree greater than 1 — it's a decision point where control can go in two or more directions. The key observation: **all paths from a branch node must eventually reconverge at the branch's immediate post-dominator.**
+
+Why? Because the IPD is, by definition, on every path from the branch to the exit. No path can skip it. So the subgraph reachable from the branch (forward along CFG edges) up to but not including the IPD is a SESE region: the branch is the entry, the IPD is the exit, and every node between them is part of the region.
+
+```
+        ┌── B ──┐
+        │       │
+   A ───┤       ├── D ───
+        │       │
+        └── C ──┘
+
+   A is the branch (out-degree 2)
+   D is ipdom[A] (all paths from A must reach D)
+   Region: {A, B, C} with entry A and exit D
+```
+
+### The join rule
+
+Symmetrically, a join node has in-degree greater than 1 — multiple control paths merge there. **All paths reaching a join node must first pass through its immediate dominator.** The immediate dominator of a join is the single point where control necessarily diverged before reconverging at the join.
+
+The region consists of all nodes dominated by the immediate dominator that can also reach the join. This is the backward-looking counterpart to the branch rule, capturing regions where the entry isn't itself a branch but is the point where control first split.
+
+### The algorithm step by step
+
+1. **Build the graph** from an adjacency list. Add a super-entry node connected to all nodes with in-degree 0, and a super-exit connected from all nodes with out-degree 0.
+
+2. **Compute dominators** from the super-entry (forward direction) and **post-dominators** from the super-exit (on the reversed graph). Both are available as immediate dominator maps via NetworkX.
+
+3. **Branch-based regions**: iterate over every real node with out-degree > 1. Its immediate post-dominator becomes the exit. BFS forward from the branch, collecting all reachable nodes except the exit. Verify the collected set has well-defined entries and exits (the SESE property check). If the set has at least `min_size` nodes and hasn't been seen before, keep it.
+
+4. **Join-based regions**: iterate over every real node with in-degree > 1. Its immediate dominator becomes the entry. Collect all nodes dominated by the entry that can also reach the join (via `nx.has_path`). This is more expensive than the branch rule because it requires a path check per candidate node, but for the scale of CFGs we work with (tens to low hundreds of basic blocks), this is negligible.
+
+5. **Deduplicate and sort**: remove exact duplicate region sets. Sort by size descending so larger regions are reported first.
+
+The full implementation is about 160 lines — roughly a third of the PST. No cycle-equivalence computation, no bracket lists, no capping edges. Just dominators, BFS, and set operations.
+
+### Why dominator-based works better for this project
+
+**It finds the regions we actually care about.** For inlining detection, we want multi-block regions that could represent a function body. The branch rule naturally identifies these: a function inlined into a caller is entered from a single call site (which may or may not be a branch) and returns to a single point. The dominator/post-dominator relationship between the call site and the return point captures exactly the inlined body.
+
+**Clean functions produce no spurious regions.** Unlike PST, which fragments a clean function into many tiny cycle-equivalence classes, the dominator approach only finds regions bounded by branch/join pairs. A simple function with a single if-else produces at most one region (the branch and its IPD). A function with a loop produces one region per loop. No noise.
+
+**It's comprehensible and debuggable.** When the dominator approach finds a region you don't expect, you can trace it: look at the branch, look at its IPD, look at what the BFS collected. The reasoning is a sentence long. The PST requires tracing through five phases of algorithmic state.
+
+**It doesn't require strong connectivity.** No synthetic back edge, no super-exit-to-super-entry cycle. The dominator computation handles the natural entry-to-exit flow of a CFG directly.
+
+**It's reliable.** No fallback needed. The `sese_explore.py` tool runs the PST with an explicit try/except that falls back to the dominator method on failure. The pipeline skips PST entirely and calls the dominator-based `find_sese_regions()` directly.
+
+## The tradeoff
+
+The PST is theoretically more complete. It partitions every edge into cycle-equivalence classes and produces a full hierarchy covering the entire graph. The dominator approach finds a subset: regions defined by branch-reconvergence and join-divergence pairs. It won't find a SESE region that doesn't start at a branch or end at a join.
+
+In practice, for this project, the regions the dominator approach misses are exactly the ones we don't want: single-node regions, single-edge regions, and regions spanning the entire function. The regions it finds — multi-block subgraphs with clear entry and exit points — are the ones that could plausibly be inlined functions. The theoretical completeness of PST is a liability here, not a feature. It produces more regions, but most are noise for the inlining detection task.
+
+## Lessons
+
+The original CodeDistill pipeline used PST for SESE decomposition. It's the more sophisticated algorithm, the one with more theoretical backing, the one that produces a complete structural hierarchy. But for the specific task of finding candidate inlined function bodies, it was the wrong tool: over-engineered, fragile, and prone to flooding the pipeline with irrelevant regions.
+
+Switching to dominator-based detection meant trading theoretical completeness for practical utility. The code is simpler, the output is sparser and more relevant, and the pipeline no longer needs fallback paths when decomposition fails. Sometimes the right algorithm isn't the one that does the most — it's the one that does exactly enough.
