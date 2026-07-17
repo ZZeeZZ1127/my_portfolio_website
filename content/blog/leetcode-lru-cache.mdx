@@ -1,0 +1,176 @@
+---
+title: "LeetCode 146: LRU Cache"
+date: "2026-07-16"
+tags: ["leetcode", "algorithms"]
+excerpt: "经典题目LRU Cache的做题思路和想法“
+---
+
+## Problem Statement
+
+Design a data structure that follows the constraints of a Least Recently Used (LRU) cache.
+
+Implement the `LRUCache` class:
+
+- `LRUCache(int capacity)` Initialize the LRU cache with positive size `capacity`.
+- `int get(int key)` Return the value of the key if the key exists, otherwise return `-1`
+- `void put(int key, int value)` Update the value of the `key` if the `key` exists. Otherwise, add the `key-value` pair to the cache. If the number of keys exceeds the `capacity` from this operation, evict the least recently used key.
+
+The function `get` and `put` must each run in `O(1)` average time complexity. 
+
+## Approach 1: Using `ArrayList`
+
+The idea is simple: using an `ArrayList` to store `int` arrays (`int[]`), where each array contains a key and a value; the most recently used/accessed array will be staying at the end of the ArrayList.
+
+When we try to `get` the value corresponding to the given key, we simply traverse the entire ArrayList to find the `int[]` that contains the given key, and returns its corresponding value. Then, we can remove that `int` array and append it to the end of the ArrayList. 
+
+When we try to `put` a key with its value, we first create an `int` array with those two elements, then traverse the entire ArrayList:
+- If the key already exists, simply replace it with the new `int` array, remove it, and append it to the end of the ArrayList. DONE!
+- Otherwise, move on to the next phase.
+
+If `key` is not found in the ArrayList, meaning that we have to create a new `int` array. However, here comes the problem, what if it already reaches the capacity (or the size of the ArrayList is equal to the capacity)?
+- If reaches the capacity, remove the very first element in the ArrayList to make space for the newly added key-value pair, as it is the least recently used one. 
+
+Under both circumstances, the newly added key-value pair will eventually be added to the cache or the ArrayList.
+
+And here is the code that implements this idea: 
+
+```java
+
+class LRUCache {
+
+    private List<int[]> cache;
+    private int capacity;
+    private int currSize;
+    
+    public LRUCache(int capacity) {
+        this.cache = new ArrayList<>();
+        this.capacity = capacity;
+        this.currSize = 0; 
+    }
+    
+    public int get(int key) {
+        for (int i = 0; i < currSize; i++) {
+            int[] curr = cache.get(i);
+            if (curr[0] == key) {
+                cache.remove(i);
+                cache.add(curr);
+                return curr[1];
+            } 
+        }
+        return -1; 
+    }
+    
+    public void put(int key, int value) {
+        for (int i = 0; i < currSize; i++) {
+            int[] curr = cache.get(i);
+            if (curr[0] == key) {
+                curr[1] = value;
+                cache.remove(i);
+                cache.add(curr);
+                return;
+            }
+        }
+
+        if (currSize == capacity) {
+            cache.remove(0);
+            currSize--;
+        }
+        cache.add(new int[]{key, value});
+        currSize++;
+    }
+}
+```
+
+### Issues 
+
+When it comes to larger input with more operations, the `ArrayList` method is too slow, as traversing the entire ArrayList is needed for both `get` and `put` methods. 
+
+Then, I asked myself, why not using HashMap? It seems reasonable to store the index of the corresponding key-value pair to access them in the ArrayList faster. But here comes another issue: since based on the mechanism introduced above, the most recently used key-value pair will be removed first from the ArrayList and appended to the very end of the ArrayList, meaning that the indices of the key-value pairs after the removed pair will all be modified, which is a huge work, making the entire tracking system hard to manage. 
+
+Therefore, at last, I abandoned this idea, and tried a different data structure. 
+
+## Approach 2: Using Doubly-Linked List and `HashMap`
+
+One thing good about the doubly-linked list is that it is much easier and faster to remove a random node in the middle of the entire linked list and append it to the end (by having a pointer or an anchored node at the very end). 
+Meanwhile, every node can be stored in a HashMap, making accessing them much faster.
+
+With a similar logic as introduced in Approach 1, here is the implementation of Approach 2: 
+
+```java
+class LRUCache {
+
+    class Node {
+        private int key;
+        private int value;
+        private Node prev;
+        private Node next;
+
+        public Node(int key, int value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    Node head = new Node(-1, -1);
+    Node tail = new Node(-1, -1);
+
+    private int capacity;
+    Map<Integer, Node> cache;
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.cache = new HashMap<>(); 
+        head.next = tail;
+        tail.prev = head;
+    }
+    
+    public int get(int key) {
+        if (cache.containsKey(key)) {
+            Node currNode = cache.get(key);
+            currNode.prev.next = currNode.next;
+            currNode.next.prev = currNode.prev;
+            currNode.next = tail;
+            currNode.prev = tail.prev;
+            tail.prev.next = currNode;
+            tail.prev = currNode;
+            return currNode.value;
+        }
+        return -1;
+    }
+    
+    public void put(int key, int value) {
+        Node newNode = new Node(key, value);
+        if (cache.containsKey(key)) {
+            Node currNode = cache.get(key);
+            currNode.prev.next = currNode.next;
+            currNode.next.prev = currNode.prev;
+            newNode.next = tail;
+            newNode.prev = tail.prev;
+            tail.prev.next = newNode;
+            tail.prev = newNode;      
+            cache.put(key, newNode);  
+            return;
+        }
+
+        if (cache.size() == capacity) {
+            Node removedNode = head.next;
+            int removedKey = removedNode.key;
+            cache.remove(removedKey);
+            head = head.next;
+            head.next.prev = head;
+        }
+
+        newNode.next = tail;
+        newNode.prev = tail.prev;
+        tail.prev.next = newNode;
+        tail.prev = newNode;      
+        cache.put(key, newNode);  
+    }
+}
+
+```
+Note: this is not the only solution, but only one way of implementing the doubly-linked list and hashmap to solve the problem, there are various other approaches to implement it that looks better and more structured. 
+
+## Key Takeaways
+
+This problem is a classical problem. Through LRU cache, I not only had a better understanding of the pros/cons of different data structures (like `ArrayList` and `LinkedList`) that may help me make better choices when solving other problems, but also learnt to think and find reasonable solutions when problems came up, instead of checking the answer key directly. Anyway, hope to see you (LRU Cache) during interviews!!!
