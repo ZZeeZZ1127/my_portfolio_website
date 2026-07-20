@@ -71,7 +71,7 @@ const mdxComponents = {
     children?: React.ReactNode;
   }) => {
     // Inline code has plain-string children; block code has React element children
-    if (typeof children === "string") {
+    if (!className) {
       return (
         <code className="inline-code font-mono text-[0.8125rem] px-1.5 py-0.5 rounded font-medium">
           {children}
@@ -198,7 +198,6 @@ export default function BlogPostContent({ post }: BlogPostContentProps) {
                       light: "github-light",
                     },
                     keepBackground: false,
-                    defaultLang: "plaintext",
                   },
                 ],
               ],
