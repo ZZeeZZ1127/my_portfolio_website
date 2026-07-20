@@ -73,7 +73,7 @@ const mdxComponents = {
     // Inline code has plain-string children; block code has React element children
     if (typeof children === "string") {
       return (
-        <code className="font-mono text-xs bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 rounded text-[var(--color-accent)]">
+        <code className="font-mono text-[0.8125rem] bg-[var(--color-surface-hover)] border border-[var(--color-accent)]/20 px-1.5 py-0.5 rounded text-[var(--color-accent)] font-medium">
           {children}
         </code>
       );
