@@ -70,8 +70,8 @@ const mdxComponents = {
     className?: string;
     children?: React.ReactNode;
   }) => {
-    const isInline = !className;
-    if (isInline) {
+    // Inline code has plain-string children; block code has React element children
+    if (typeof children === "string") {
       return (
         <code className="font-mono text-xs bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 rounded text-[var(--color-accent)]">
           {children}
@@ -84,11 +84,23 @@ const mdxComponents = {
       </code>
     );
   },
-  pre: ({ children }: { children?: React.ReactNode }) => (
-    <pre className="border border-[var(--color-border)] rounded-lg p-4 overflow-x-auto bg-[var(--color-surface)] my-6 font-mono text-[0.8125rem] leading-relaxed">
-      {children}
-    </pre>
-  ),
+  pre: ({ children, ...props }: { children?: React.ReactNode }) => {
+    const lang = (props as Record<string, unknown>)["data-language"] as
+      | string
+      | undefined;
+    return (
+      <div className="code-block-wrapper relative my-6">
+        {lang && lang !== "plaintext" && (
+          <span className="lang-tag absolute top-2 right-3 font-mono text-[0.65rem] uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-surface-hover)] px-2 py-0.5 rounded border border-[var(--color-border)] select-none z-10">
+            {lang}
+          </span>
+        )}
+        <pre className="border border-[var(--color-border)] rounded-lg p-4 pt-9 overflow-x-auto bg-[var(--color-surface)] font-mono text-[0.8125rem] leading-relaxed">
+          {children}
+        </pre>
+      </div>
+    );
+  },
   hr: () => <hr className="border-[var(--color-border)] my-8" />,
   table: ({ children }: { children?: React.ReactNode }) => (
     <div className="overflow-x-auto my-4">

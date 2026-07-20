@@ -200,3 +200,18 @@
   border: none;
   padding: 0;
 }
+
+/* Apply Shiki syntax highlighting colors */
+.prose-custom pre code span {
+  color: var(--shiki-light);
+}
+
+.dark .prose-custom pre code span {
+  color: var(--shiki-dark);
+}
+
+/* Code block language tag */
+.prose-custom .code-block-wrapper:hover .lang-tag {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
