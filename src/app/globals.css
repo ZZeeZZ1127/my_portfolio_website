@@ -182,8 +182,8 @@
   height: auto;
 }
 
-/* Inline code */
-.prose-custom .inline-code {
+/* Inline code — only styles code that is NOT inside a pre element */
+.prose-custom :not(pre) > code {
   font-family: var(--font-jetbrains-mono);
   font-size: 0.8125rem;
   color: var(--color-accent);

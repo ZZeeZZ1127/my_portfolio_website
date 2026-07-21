@@ -70,14 +70,6 @@ const mdxComponents = {
     className?: string;
     children?: React.ReactNode;
   }) => {
-    // Inline code has plain-string children; block code has React element children
-    if (!className) {
-      return (
-        <code className="inline-code font-mono text-[0.8125rem] px-1.5 py-0.5 rounded font-medium">
-          {children}
-        </code>
-      );
-    }
     return (
       <code className={className} {...props}>
         {children}
